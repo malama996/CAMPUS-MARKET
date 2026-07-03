@@ -1,0 +1,133 @@
+"use client";
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import api from '../../../lib/api';
+import { useAuth } from '../../../lib/auth';
+import SaveButton from '../../../components/SaveButton';
+import SimilarListings from '../../../components/SimilarListings';
+
+export default function ListingDetailPage({ params }) {
+  const [listing, setListing] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
+  const { user } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const { data } = await api.get(`/listings/${params.id}`);
+        if (data?.listing) setListing(data.listing);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [params.id]);
+
+  const isOwner = user?.id === listing?.seller_id;
+
+  const handleContact = async () => {
+    if (!user) return router.push('/login');
+    try {
+      const { data } = await api.post('/chat/threads', { listing_id: listing.id });
+      if (data?.thread) {
+        router.push(`/chat/${data.thread.id}`);
+      }
+    } catch (err) {
+      alert('Failed to start chat');
+    }
+  };
+
+  const handleDeleteListing = async () => {
+    const confirmed = window.confirm('Delete this listing? It will be removed from the market.');
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await api.delete(`/listings/${listing.id}`);
+      router.push('/market');
+    } catch (err) {
+      alert('Failed to delete listing');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (loading) return <div className="animate-pulse bg-card rounded-xl h-[60vh]"></div>;
+  if (!listing) return <div className="text-center py-20 text-xl font-bold">Listing not found</div>;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8 pb-10">
+      <div className="bg-card rounded-xl overflow-hidden border border-border shadow-sm">
+        {/* Image Gallery */}
+        <div className="aspect-video bg-muted relative border-b border-border">
+          {listing.images?.[0] ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-contain" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-muted-foreground">No Images</div>
+          )}
+        </div>
+
+        <div className="p-6 sm:p-8">
+          <div className="flex justify-between items-start gap-4">
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground leading-tight">{listing.title}</h1>
+              <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                <span>{listing.school}</span>
+                <span>•</span>
+                <span>{new Date(listing.created_at).toLocaleDateString()}</span>
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              <span className="text-2xl sm:text-3xl font-extrabold text-primary">ZMW {listing.price_zmw}</span>
+              {user && <SaveButton listingId={listing.id} initialSaved={listing.viewerHasSaved} />}
+              {isOwner && (
+                <button
+                  onClick={handleDeleteListing}
+                  disabled={deleting}
+                  className="inline-flex h-10 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 px-4 text-sm font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting...' : 'Delete Listing'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="mt-8 prose prose-sm sm:prose-base dark:prose-invert max-w-none">
+            <h3 className="text-lg font-semibold mb-2">Description</h3>
+            <p className="whitespace-pre-wrap text-muted-foreground">{listing.description}</p>
+          </div>
+
+          <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row gap-6 justify-between items-center">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold text-xl">
+                {listing.seller?.display_name?.charAt(0) || 'U'}
+              </div>
+              <div>
+                <p className="font-semibold text-foreground">{listing.seller?.display_name}</p>
+                <p className="text-xs text-muted-foreground">@{listing.seller?.username}</p>
+              </div>
+            </div>
+            
+            {user?.id !== listing.seller_id && (
+              <button 
+                onClick={handleContact}
+                className="w-full sm:w-auto inline-flex h-11 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+              >
+                Message Seller
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <SimilarListings listingId={listing.id} />
+    </div>
+  );
+}
