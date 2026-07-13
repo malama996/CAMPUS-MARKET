@@ -1,3 +1,10 @@
+
+import dns from 'node:dns';
+// Render's container network resolves some hosts (including *.supabase.co) to an
+// IPv6 address first. Supabase's REST API does not accept outbound IPv6 connections,
+// so Node's fetch (undici) fails with a generic "TypeError: fetch failed" and no
+// useful detail. Forcing IPv4-first resolution fixes it without touching any URLs.
+dns.setDefaultResultOrder('ipv4first');
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
