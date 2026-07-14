@@ -36,11 +36,16 @@ export default function ChatThreadPage() {
     load();
   }, [params.threadId]);
 
+  // Scroll to bottom whenever the message list changes (initial load,
+  // sent message, or an incoming realtime message).
   useEffect(() => {
-    // Scroll to bottom
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
-    // Supabase Realtime subscription
+  // Realtime subscription — only (re)created when the thread changes, not on
+  // every new message. Kept in its own effect so it isn't torn down and
+  // rebuilt on each render.
+  useEffect(() => {
     const channel = supabase
       .channel(`thread:${params.threadId}`)
       .on('postgres_changes', {
@@ -49,7 +54,13 @@ export default function ChatThreadPage() {
         table: 'chat_messages',
         filter: `thread_id=eq.${params.threadId}`,
       }, (payload) => {
-        setMessages((prev) => [...prev, payload.new]);
+        // Dedupe against messages already added via the direct API response
+        // in handleSend — otherwise the sender sees their own message twice
+        // (once from the POST response, once from this realtime event).
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === payload.new.id)) return prev;
+          return [...prev, payload.new];
+        });
       })
       .subscribe();
 
@@ -65,14 +76,14 @@ export default function ChatThreadPage() {
     try {
       const msg = newMessage;
       setNewMessage(''); // optimistic clear
-      
+
       const { data } = await api.post(`/chat/threads/${params.threadId}/messages`, { body: msg });
-      
-      // If we got a direct response, add it (realtime might also trigger, React keys will dedupe if handled right, 
-      // but here we just rely on realtime if possible, or append if needed. For simplicity, append here if not using strict optimistic UI id matching)
+
+      // Dedupe here too, in case the realtime event arrives before this
+      // response resolves.
       if (data?.message) {
         setMessages((prev) => {
-          if (prev.find(m => m.id === data.message.id)) return prev;
+          if (prev.find((m) => m.id === data.message.id)) return prev;
           return [...prev, data.message];
         });
       }

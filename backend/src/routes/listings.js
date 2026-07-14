@@ -10,14 +10,32 @@ import { getSimilarListings } from '../utils/similarity.js';
 
 export const listingsRouter = Router();
 
+// ─── FEED CACHE HELPERS ─────────────────────────────────────────────────────
+// Upstash/serverless Redis does not reliably support KEYS/SCAN for bulk
+// invalidation, so we track every cache key we write in a Redis SET and
+// invalidate against that set instead of scanning.
+const FEED_KEYS_SET = 'feed:keys';
+
+async function cacheFeedPage(cacheKey, payload) {
+  try {
+    await redis.set(cacheKey, payload, { ex: CACHE_TTL_SECONDS.feedPage });
+    await redis.sadd(FEED_KEYS_SET, cacheKey);
+  } catch (err) {
+    console.error('[feed] cache write failed:', err.message);
+  }
+}
+
 async function invalidateFeedCache() {
   try {
-    const keys = await redis.keys('feed:*');
+    const keys = await redis.smembers(FEED_KEYS_SET);
     if (keys?.length) {
       await Promise.all(keys.map((key) => redis.del(key)));
+      await redis.del(FEED_KEYS_SET);
     }
   } catch (err) {
-    console.warn('[feed] cache invalidation failed:', err.message);
+    // This must be loud — a silent failure here is what causes deleted/stale
+    // listings to keep appearing in the feed after a delete or update.
+    console.error('[feed] cache invalidation FAILED:', err.message);
   }
 }
 
@@ -37,6 +55,10 @@ const createListingSchema = z.object({
   school: z.string().min(2),
   hostel: z.string().optional().nullable(),
   images: z.array(z.string().url()).max(6).default([]),
+  // Idempotency key: frontend generates one UUID per create-form session and
+  // sends it with every submit attempt. Lets us safely dedupe retries/double
+  // submits without blocking legitimate re-posts of similar items.
+  client_id: z.string().uuid().optional(),
 });
 
 // ─── FEED (cursor-based, Copperbelt-scoped) ────────────────────────────────
@@ -77,8 +99,8 @@ listingsRouter.get('/feed', optionalAuth, async (req, res, next) => {
     const nextCursor = data.length === PAGE_SIZE ? data[data.length - 1].created_at : null;
     const payload = { listings: data, nextCursor, total: data.length };
 
-    // Write to cache (fire-and-forget)
-    redis.set(cacheKey, payload, { ex: CACHE_TTL_SECONDS.feedPage }).catch(() => {});
+    // Write to cache (fire-and-forget is fine for writes, just not for invalidation)
+    cacheFeedPage(cacheKey, payload).catch(() => {});
     res.json(payload);
   } catch (err) {
     next(err);
@@ -224,7 +246,26 @@ listingsRouter.post(
         return res.status(400).json({ error: 'Invalid listing payload', details: parsed.error.flatten() });
       }
 
-      const row = { ...parsed.data, seller_id: req.user.id };
+      const { client_id, ...listingFields } = parsed.data;
+
+      // Idempotency check: if this exact client_id was already used by this
+      // seller, return the existing listing instead of creating a duplicate.
+      // Covers double-clicks, client retries on timeout, and page refreshes
+      // that resubmit the same form.
+      if (client_id) {
+        const { data: existing } = await supabaseAdmin
+          .from('listings')
+          .select('*')
+          .eq('seller_id', req.user.id)
+          .eq('client_id', client_id)
+          .maybeSingle();
+
+        if (existing) {
+          return res.status(200).json({ listing: existing, deduped: true });
+        }
+      }
+
+      const row = { ...listingFields, client_id: client_id || null, seller_id: req.user.id };
 
       const { data, error } = await supabaseAdmin
         .from('listings')
@@ -232,7 +273,20 @@ listingsRouter.post(
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // Unique constraint on (seller_id, client_id) tripped by a concurrent
+        // duplicate request — fetch and return the row that won the race.
+        if (error.code === '23505' && client_id) {
+          const { data: existing } = await supabaseAdmin
+            .from('listings')
+            .select('*')
+            .eq('seller_id', req.user.id)
+            .eq('client_id', client_id)
+            .maybeSingle();
+          if (existing) return res.status(200).json({ listing: existing, deduped: true });
+        }
+        throw error;
+      }
 
       // Increment free-tier counter
       await incrementListingCount(req.user.id);
@@ -274,6 +328,10 @@ listingsRouter.patch('/:id', requireAuth, async (req, res, next) => {
       .single();
 
     if (error) return res.status(403).json({ error: 'Not your listing, or listing not found' });
+
+    // Status/price/etc changes can affect what the feed shows — keep it fresh.
+    await invalidateFeedCache();
+
     res.json({ listing: data });
   } catch (err) {
     next(err);
@@ -294,7 +352,12 @@ listingsRouter.delete('/:id', requireAuth, async (req, res, next) => {
     if (error || !data) return res.status(403).json({ error: 'Not your listing, or listing not found' });
 
     await decrementListingCount(req.user.id);
-    invalidateFeedCache().catch(() => {});
+
+    // Await this — a delete must clear the cache before responding, otherwise
+    // a fast client refetch can still hit the stale cached feed page and show
+    // the just-deleted listing.
+    await invalidateFeedCache();
+
     res.status(204).send();
   } catch (err) {
     next(err);

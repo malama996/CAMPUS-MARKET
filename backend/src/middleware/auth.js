@@ -26,13 +26,24 @@ export async function requireAuth(req, res, next) {
   }
 }
 
-/** Optional auth: attaches req.user if a valid token is present, otherwise continues anonymously. */
+/**
+ * Optional auth: attaches req.user if a valid token is present, otherwise
+ * continues anonymously. Must never block or error the request — if token
+ * verification throws for any reason (network blip, malformed token, etc.),
+ * fail open and treat the request as anonymous rather than surfacing an
+ * unhandled rejection or a false auth failure.
+ */
 export async function optionalAuth(req, _res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return next();
+  try {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) return next();
 
-  const { data } = await supabaseAdmin.auth.getUser(token);
-  if (data?.user) req.user = data.user;
-  next();
+    const { data } = await supabaseAdmin.auth.getUser(token);
+    if (data?.user) req.user = data.user;
+    next();
+  } catch (err) {
+    console.warn('[optionalAuth] verification failed, continuing anonymously:', err.message);
+    next();
+  }
 }
