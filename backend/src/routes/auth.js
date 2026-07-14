@@ -29,6 +29,22 @@ const completeProfileSchema = z.object({
   hostel: z.string().optional().nullable(),
 });
 
+// Helper: robustly detect "email already exists" across Supabase's various error shapes.
+// Supabase has changed this wording between versions, so we check multiple signals
+// instead of relying on one exact substring.
+function isEmailAlreadyExistsError(authError) {
+  if (!authError) return false;
+  const msg = (authError.message || '').toLowerCase();
+  const code = authError.code || authError.error_code || '';
+
+  return (
+    code === 'user_already_exists' ||
+    code === 'email_exists' ||
+    authError.status === 422 ||
+    (msg.includes('already') && (msg.includes('registered') || msg.includes('exists')))
+  );
+}
+
 // ─── REGISTER ──────────────────────────────────────────────────────────────
 // Rate limited: 5 registrations per hour per IP to prevent spam
 authRouter.post(
@@ -62,9 +78,11 @@ authRouter.post(
       });
 
       if (authError) {
-        if (authError.message.includes('already registered')) {
-          return res.status(409).json({ error: 'An account with this email already exists' });
+        if (isEmailAlreadyExistsError(authError)) {
+          return res.status(409).json({ error: 'An account with this email already exists. Try logging in instead.' });
         }
+        // Log the real error so it shows up in Render logs instead of being a mystery 500
+        console.error('Supabase createUser error:', authError);
         throw authError;
       }
 
@@ -86,23 +104,21 @@ authRouter.post(
         .single();
 
       if (profileError) {
-        // Roll back auth user if profile creation fails
+        // Roll back auth user if profile creation fails, so retrying doesn't hit
+        // "email already exists" for a registration that never actually completed.
         await supabaseAdmin.auth.admin.deleteUser(authData.user.id).catch(() => {});
+
         if (profileError.code === '23505') {
           return res.status(409).json({ error: 'Username already taken' });
         }
+        console.error('Profile creation error:', profileError);
         throw profileError;
       }
 
       // Sign in immediately to get tokens
-      const { data: session, error: sessionError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'magiclink',
-        email,
-      });
-
-      // For MVP: sign in directly
       const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({ email, password });
       if (signInError) {
+        console.error('Post-registration auto sign-in failed:', signInError);
         // Registration succeeded but auto-login failed — client should use /login
         return res.status(201).json({ profile, message: 'Account created. Please log in.' });
       }
@@ -136,16 +152,34 @@ authRouter.post(
       });
 
       if (error) {
-        // Deliberately vague — don't reveal which field is wrong
-        return res.status(401).json({ error: 'Invalid email or password' });
+        // Only genuine bad-credential responses should show "Invalid email or password".
+        // Anything else (timeouts, rate limits, Supabase outages) gets its own message
+        // so users aren't told their correct password is wrong.
+        const status = error.status || 400;
+
+        if (status === 400 || status === 401) {
+          return res.status(401).json({ error: 'Invalid email or password' });
+        }
+
+        console.error('Login error (non-credential):', error);
+
+        if (status === 429) {
+          return res.status(429).json({ error: 'Too many attempts. Please wait a moment and try again.' });
+        }
+
+        return res.status(503).json({ error: 'Login is temporarily unavailable. Please try again in a moment.' });
       }
 
       // Fetch profile
-      const { data: profile } = await supabaseAdmin
+      const { data: profile, error: profileErr } = await supabaseAdmin
         .from('profiles')
         .select('*')
         .eq('id', data.user.id)
         .single();
+
+      if (profileErr) {
+        console.error('Profile fetch error after login:', profileErr);
+      }
 
       res.json({
         access_token: data.session.access_token,
