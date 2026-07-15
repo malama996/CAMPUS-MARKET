@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { ThemeCustomizer } from '../../../components/ThemeCustomizer';
 import { requestNotificationPermission } from '../../../lib/firebase';
 import { useAuth } from '../../../lib/auth';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '../../../lib/supabaseClient';
 import { Bell, BellOff, Check } from 'lucide-react';
 
 export default function ThemeSettingsPage() {
