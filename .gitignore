@@ -35,3 +35,8 @@ Thumbs.db
 coverage/
 .turbo/
 .cache/
+# Firebase / Supabase secrets
+firebase-service-account.json
+*.serviceaccount.json
+supabase/.temp/
+.vscode/settings.json
