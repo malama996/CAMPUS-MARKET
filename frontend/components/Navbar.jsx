@@ -1,6 +1,7 @@
 "use client";
 
 import Link from 'next/link';
+import { Settings } from 'lucide-react';
 import { useAuth } from '../lib/auth';
 import ThemeToggle from './ThemeToggle';
 
@@ -33,6 +34,13 @@ export default function Navbar() {
                 </Link>
                 <Link href={`/profile/${user.id}`} className="text-sm font-medium text-muted-foreground hover:text-foreground">
                   {profile?.username || 'Profile'}
+                </Link>
+                <Link
+                  href="/settings/theme"
+                  aria-label="Settings"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Settings size={20} />
                 </Link>
                 <button
                   onClick={logout}

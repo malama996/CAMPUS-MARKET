@@ -49,7 +49,7 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const result = await register({
+      await register({
         ...formData,
         username: formData.username.trim(),
         display_name: formData.display_name.trim(),
@@ -58,14 +58,10 @@ export default function RegisterPage() {
         institution_id: parseInt(formData.institution_id, 10)
       });
 
-      setToast({ type: 'success', message: 'Account created successfully! Redirecting...' });
+      setToast({ type: 'success', message: 'Account created successfully! Redirecting to login...' });
 
       setTimeout(() => {
-        if (result?.access_token) {
-          router.push('/market');
-        } else {
-          router.push('/login');
-        }
+        router.push('/login');
       }, 1500);
     } catch (err) {
       setError(err.message || 'Registration failed');

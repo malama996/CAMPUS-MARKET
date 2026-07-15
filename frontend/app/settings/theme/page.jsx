@@ -8,10 +8,15 @@ import { supabase } from '../../../lib/supabaseClient';
 import { Bell, BellOff, Check } from 'lucide-react';
 
 export default function ThemeSettingsPage() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [status, setStatus] = useState('idle'); // idle | enabling | enabled | denied | unsupported
 
   const handleEnableNotifications = async () => {
+    if (!user) {
+      console.warn('No authenticated user yet — cannot enable notifications');
+      return;
+    }
+
     setStatus('enabling');
     try {
       const token = await requestNotificationPermission(user.id, supabase);
@@ -34,7 +39,7 @@ export default function ThemeSettingsPage() {
 
         <button
           onClick={handleEnableNotifications}
-          disabled={status === 'enabling' || status === 'enabled'}
+          disabled={authLoading || !user || status === 'enabling' || status === 'enabled'}
           className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-secondary hover:bg-secondary/80 transition disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {status === 'enabled' ? (
@@ -54,6 +59,12 @@ export default function ThemeSettingsPage() {
             </>
           )}
         </button>
+
+        {!user && !authLoading && (
+          <p className="text-sm text-muted-foreground mt-2">
+            Log in to enable notifications.
+          </p>
+        )}
 
         {status === 'denied' && (
           <p className="text-sm text-red-500 mt-2 flex items-center gap-1">

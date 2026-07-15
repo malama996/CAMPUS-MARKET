@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from './supabaseClient';
 import api from './api';
 
@@ -18,6 +19,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     // Check active sessions and sets the user
@@ -83,25 +85,16 @@ export function AuthProvider({ children }) {
     const { data, error } = await api.post('/auth/register', payload);
     if (error) throw new Error(error);
 
-    if (data?.access_token && data?.refresh_token) {
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: data.access_token,
-        refresh_token: data.refresh_token,
-      });
-
-      if (sessionError) throw sessionError;
-    }
-
-    if (data?.profile) {
-      setProfile(data.profile);
-    }
-
+    // Registration only — no auto-login. User is redirected to /login to sign in manually.
     return data;
   };
 
   const logout = async () => {
     await api.post('/auth/logout');
     await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    router.push('/');
   };
 
   const deleteAccount = async () => {
@@ -111,6 +104,7 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
+    router.push('/');
   };
 
   return (

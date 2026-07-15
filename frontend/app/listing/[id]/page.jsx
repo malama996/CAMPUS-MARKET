@@ -7,6 +7,7 @@ import api from '../../../lib/api';
 import { useAuth } from '../../../lib/auth';
 import SaveButton from '../../../components/SaveButton';
 import SimilarListings from '../../../components/SimilarListings';
+import ImageGallery from '../../../components/ImageGallery';
 
 export default function ListingDetailPage({ params }) {
   const [listing, setListing] = useState(null);
@@ -64,15 +65,7 @@ export default function ListingDetailPage({ params }) {
   return (
     <div className="max-w-4xl mx-auto space-y-8 pb-10">
       <div className="bg-card rounded-xl overflow-hidden border border-border shadow-sm">
-        {/* Image Gallery */}
-        <div className="aspect-video bg-muted relative border-b border-border">
-          {listing.images?.[0] ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-contain" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center text-muted-foreground">No Images</div>
-          )}
-        </div>
+        <ImageGallery images={listing.images || []} title={listing.title} />
 
         <div className="p-6 sm:p-8">
           <div className="flex justify-between items-start gap-4">
