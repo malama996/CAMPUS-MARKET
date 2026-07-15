@@ -23,7 +23,11 @@ export async function requestNotificationPermission(userId, supabase) {
   const permission = await Notification.requestPermission();
   if (permission !== 'granted') return null;
 
-  const registration = await navigator.serviceWorker.ready;
+  // Register (or reuse) the Firebase-specific service worker directly.
+  // navigator.serviceWorker.ready can resolve to an unrelated worker
+  // (e.g. the app's general offline-caching sw.js), which Firebase's
+  // getToken() can't communicate with — so we register this one explicitly.
+  const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
 
   const token = await getToken(messaging, {
     vapidKey: process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY,
