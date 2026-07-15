@@ -1,4 +1,5 @@
 import { AuthProvider } from '../lib/auth';
+import ServiceWorkerRegister from './ServiceWorkerRegister'
 import Navbar from '../components/Navbar';
 import { ThemeProvider } from '../components/ThemeProvider';
 import '../styles/globals.css';
@@ -24,6 +25,7 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className="bg-background text-foreground antialiased min-h-screen flex flex-col">
+        <ServiceWorkerRegister />
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <AuthProvider>
             <Navbar />
