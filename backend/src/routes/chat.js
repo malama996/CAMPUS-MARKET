@@ -141,13 +141,33 @@ chatRouter.post(
 
       const is_flagged = flagSuspiciousMessage(parsed.data.body);
 
+      // ─── TEMPORARY DEBUG LOGGING — remove once the RLS issue is diagnosed ───
+      console.log('[CHAT-DEBUG] Insert attempt:', {
+        thread_id: req.params.id,
+        sender_id: req.user?.id,
+        sender_id_type: typeof req.user?.id,
+        is_flagged,
+        keyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 30),
+        keyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length,
+      });
+      // ──────────────────────────────────────────────────────────────────────
+
       const { data, error } = await supabaseAdmin
         .from('chat_messages')
         .insert({ thread_id: req.params.id, sender_id: req.user.id, body: parsed.data.body, is_flagged })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        // ─── TEMPORARY DEBUG LOGGING ───
+        console.error('[CHAT-DEBUG] Insert FAILED:', JSON.stringify(error, null, 2));
+        // ────────────────────────────────
+        throw error;
+      }
+
+      // ─── TEMPORARY DEBUG LOGGING ───
+      console.log('[CHAT-DEBUG] Insert SUCCEEDED, id:', data.id);
+      // ────────────────────────────────
 
       await supabaseAdmin
         .from('chat_threads')
