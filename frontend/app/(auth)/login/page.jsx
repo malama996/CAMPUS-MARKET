@@ -19,8 +19,8 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const data = await login(email, password);
-      router.push(`/profile/${data.profile.id}`);
+      await login(email, password);
+      router.push('/');
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
