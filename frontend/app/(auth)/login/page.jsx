@@ -1,9 +1,18 @@
 "use client";
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '../../../lib/auth';
+
+// Only allow internal paths as a redirect target. Rejects anything that
+// isn't a same-site path (protects against open-redirect abuse via a
+// crafted ?redirect= value pointing to an external URL).
+function getSafeRedirect(value) {
+  if (!value) return '/';
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  return value;
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,7 +20,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { login } = useAuth();
+
+  const redirectTo = getSafeRedirect(searchParams.get('redirect'));
+  const registerHref = redirectTo !== '/'
+    ? `/register?redirect=${encodeURIComponent(redirectTo)}`
+    : '/register';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -20,7 +35,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push('/');
+      router.push(redirectTo);
     } catch (err) {
       setError(err.message || 'Login failed');
     } finally {
@@ -75,7 +90,7 @@ export default function LoginPage() {
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{' '}
-          <Link href="/register" className="text-primary hover:underline font-medium">
+          <Link href={registerHref} className="text-primary hover:underline font-medium">
             Sign up
           </Link>
         </div>

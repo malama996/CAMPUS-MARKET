@@ -6,6 +6,8 @@ import Link from 'next/link';
 import api from '../../../lib/api';
 import { useAuth } from '../../../lib/auth';
 import SaveButton from '../../../components/SaveButton';
+import LikeButton from '../../../components/LikeButton';
+import CommentSection from '../../../components/CommentSection';
 import SimilarListings from '../../../components/SimilarListings';
 import ImageGallery from '../../../components/ImageGallery';
 
@@ -33,7 +35,7 @@ export default function ListingDetailPage({ params }) {
   const isOwner = user?.id === listing?.seller_id;
 
   const handleContact = async () => {
-    if (!user) return router.push('/login');
+    if (!user) return router.push(`/login?redirect=/listing/${params.id}`);
     try {
       const { data } = await api.post('/chat/threads', { listing_id: listing.id });
       if (data?.thread) {
@@ -79,7 +81,14 @@ export default function ListingDetailPage({ params }) {
             </div>
             <div className="flex flex-col items-end gap-2 shrink-0">
               <span className="text-2xl sm:text-3xl font-extrabold text-primary">ZMW {listing.price_zmw}</span>
-              {user && <SaveButton listingId={listing.id} initialSaved={listing.viewerHasSaved} />}
+              <div className="flex items-center gap-2">
+                <LikeButton
+                  listingId={listing.id}
+                  initialLiked={listing.viewerHasLiked}
+                  initialCount={listing.like_count}
+                />
+                {user && <SaveButton listingId={listing.id} initialSaved={listing.viewerHasSaved} />}
+              </div>
               {isOwner && (
                 <button
                   onClick={handleDeleteListing}
@@ -117,6 +126,8 @@ export default function ListingDetailPage({ params }) {
               </button>
             )}
           </div>
+
+          <CommentSection listingId={listing.id} />
         </div>
       </div>
 

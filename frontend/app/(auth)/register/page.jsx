@@ -1,11 +1,17 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../../../lib/auth';
 import api from '../../../lib/api';
+
+function getSafeRedirect(value) {
+  if (!value) return '/';
+  if (!value.startsWith('/') || value.startsWith('//')) return '/';
+  return value;
+}
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -17,7 +23,13 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [toast, setToast] = useState(null); // { type: 'success' | 'error', message: string }
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { register } = useAuth();
+
+  const redirectTo = getSafeRedirect(searchParams.get('redirect'));
+  const loginHref = redirectTo !== '/'
+    ? `/login?redirect=${encodeURIComponent(redirectTo)}`
+    : '/login';
 
   useEffect(() => {
     if (!toast) return;
@@ -61,7 +73,7 @@ export default function RegisterPage() {
       setToast({ type: 'success', message: 'Account created successfully! Redirecting to login...' });
 
       setTimeout(() => {
-        router.push('/login');
+        router.push(loginHref);
       }, 1500);
     } catch (err) {
       setError(err.message || 'Registration failed');
@@ -202,7 +214,7 @@ export default function RegisterPage() {
 
         <div className="mt-6 text-center text-sm text-muted-foreground">
           Already have an account?{' '}
-          <Link href="/login" className="text-primary hover:underline font-medium">Log in</Link>
+          <Link href={loginHref} className="text-primary hover:underline font-medium">Log in</Link>
         </div>
       </div>
     </div>

@@ -39,13 +39,6 @@ async function invalidateFeedCache() {
   }
 }
 
-// Copperbelt-only institutions (scope guard)
-const COPPERBELT_INSTITUTIONS = [
-  'Copperbelt University', 'CBU', 'TEVET', 'Zambia University of Technology',
-  'ZUT', 'Nkana Secondary School', 'Kitwe College', 'Ndola Institute',
-  'Copperbelt Health Education Institute', 'CHEI', 'Luanshya College', 'Mufulira College',
-];
-
 const createListingSchema = z.object({
   category_id: z.number().int().min(1).max(7),
   title: z.string().min(3).max(120),
@@ -189,6 +182,18 @@ listingsRouter.get('/:id', optionalAuth, async (req, res, next) => {
       viewerHasSaved = !!saved;
     }
 
+    // Check if current user has liked this listing
+    let viewerHasLiked = false;
+    if (req.user) {
+      const { data: liked } = await supabaseAdmin
+        .from('likes')
+        .select('listing_id')
+        .eq('user_id', req.user.id)
+        .eq('listing_id', req.params.id)
+        .maybeSingle();
+      viewerHasLiked = !!liked;
+    }
+
     // Async view increment (never slows response)
     supabaseAdmin
       .from('listings')
@@ -197,7 +202,7 @@ listingsRouter.get('/:id', optionalAuth, async (req, res, next) => {
       .then(() => {})
       .catch(() => {});
 
-    res.json({ listing: { ...data, viewerHasSaved } });
+    res.json({ listing: { ...data, viewerHasSaved, viewerHasLiked } });
   } catch (err) {
     next(err);
   }

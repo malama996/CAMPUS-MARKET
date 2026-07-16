@@ -316,7 +316,7 @@ function PublicHero({ user, loading, recentListings }) {
         </motion.section>
 
         {/* Footer */}
-        <footer className="border-t border-border py-12 text-center text-muted-foreground bg-card">
+        <footer className="hide-in-pwa border-t border-border py-12 text-center text-muted-foreground bg-card">
           <p>&copy; 2026 Campus Market. All rights reserved.</p>
           <p className="text-sm mt-2">Built for the Copperbelt Province.</p>
           <p className="text-sm mt-4 font-semibold text-foreground">Developed by ZhenchStack</p>

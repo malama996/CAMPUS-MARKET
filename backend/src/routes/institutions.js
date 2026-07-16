@@ -36,7 +36,7 @@ institutionsRouter.get('/', async (req, res, next) => {
 // Static fallback — mirrors the seeded data in schema.sql
 const STATIC_COPPERBELT_INSTITUTIONS = [
   { id: 1, name: 'Copperbelt University', short_name: 'CBU', type: 'university', city: 'Kitwe' },
-  { id: 2, name: 'Zambia University of Technology', short_name: 'ZUT', type: 'university', city: 'Kitwe' },
+  { id: 2, name: 'Zambia University of Technology', short_name: 'ZUT', type: 'university', city: 'Ndola' },
   { id: 3, name: 'Northrise University', short_name: 'NSU', type: 'university', city: 'Ndola' },
   { id: 4, name: 'Kitwe College of Education', short_name: 'KCE', type: 'college', city: 'Kitwe' },
   { id: 5, name: 'Ndola College of Education', short_name: 'NCE', type: 'college', city: 'Ndola' },
@@ -46,4 +46,6 @@ const STATIC_COPPERBELT_INSTITUTIONS = [
   { id: 9, name: 'Nkana College', short_name: 'NKC', type: 'college', city: 'Kitwe' },
   { id: 10, name: 'Mindolo Ecumenical Foundation', short_name: 'MEF', type: 'college', city: 'Kitwe' },
   { id: 11, name: 'Copperbelt', short_name: 'CBelt', type: 'region', city: 'Copperbelt Province' },
+  { id: 12, name: 'Northern Technical College', short_name: 'NORTEC', type: 'college', city: 'Ndola' },
 ];
+

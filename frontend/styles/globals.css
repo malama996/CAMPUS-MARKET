@@ -94,3 +94,22 @@
 .glass-panel {
   @apply bg-background/60 backdrop-blur-md border border-border/50 shadow-sm;
 }
+
+/* Hide footer only when running as an installed PWA (standalone mode).
+   Stays visible in any regular browser tab, mobile or desktop.
+   Applied by the browser at first paint (before JS/hydration), so there
+   is no flash — it is simply never rendered visible in standalone mode.
+   !important guarantees no other rule can override it. */
+@media (display-mode: standalone) {
+  .hide-in-pwa {
+    display: none !important;
+  }
+}
+
+/* iOS Safari "Add to Home Screen" apps report display-mode differently
+   (navigator.standalone) rather than matching (display-mode: standalone)
+   in all versions. This covers that case too via a JS-set class as a
+   fallback safety net — see layout.jsx for the tiny inline script. */
+html.is-ios-pwa .hide-in-pwa {
+  display: none !important;
+}
