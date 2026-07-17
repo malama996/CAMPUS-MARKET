@@ -7,13 +7,15 @@ import { flagSuspiciousMessage } from '../utils/fraud.js';
 
 export const chatRouter = Router();
 
-// GET /api/chat/threads — all threads for the current user, newest first
+// GET /api/chat/threads — all threads for the current user, newest first.
+// Excludes threads the current user has deleted their own side of.
 chatRouter.get('/threads', requireAuth, async (req, res, next) => {
   try {
     const { data, error } = await supabaseAdmin
       .from('chat_threads')
       .select(`
-        id, buyer_id, seller_id, last_message_at, listing:listings ( id, title, images ),
+        id, buyer_id, seller_id, last_message_at, deleted_by_buyer, deleted_by_seller,
+        listing:listings ( id, title, images ),
         buyer:profiles!chat_threads_buyer_id_fkey ( id, username, display_name, avatar_url ),
         seller:profiles!chat_threads_seller_id_fkey ( id, username, display_name, avatar_url )
       `)
@@ -21,7 +23,16 @@ chatRouter.get('/threads', requireAuth, async (req, res, next) => {
       .order('last_message_at', { ascending: false });
 
     if (error) throw error;
-    res.json({ threads: data });
+
+    // Filter out threads this user deleted their own side of. Done in JS
+    // rather than in the query because the "which side am I" check depends
+    // on which of buyer_id/seller_id matches the current user.
+    const visible = (data || []).filter((t) => {
+      const isBuyer = t.buyer_id === req.user.id;
+      return isBuyer ? !t.deleted_by_buyer : !t.deleted_by_seller;
+    });
+
+    res.json({ threads: visible });
   } catch (err) {
     next(err);
   }
@@ -33,7 +44,7 @@ chatRouter.get('/threads/:id', requireAuth, async (req, res, next) => {
     const { data: thread, error: threadErr } = await supabaseAdmin
       .from('chat_threads')
       .select(`
-        id, buyer_id, seller_id, last_message_at,
+        id, buyer_id, seller_id, last_message_at, deleted_by_buyer, deleted_by_seller,
         listing:listings ( id, title, images ),
         buyer:profiles!chat_threads_buyer_id_fkey ( id, username, display_name, avatar_url ),
         seller:profiles!chat_threads_seller_id_fkey ( id, username, display_name, avatar_url )
@@ -82,6 +93,20 @@ chatRouter.post('/threads', requireAuth, async (req, res, next) => {
       .single();
 
     if (error) throw error;
+
+    // If the buyer previously deleted this thread and is messaging again,
+    // un-hide it on their side so it reappears in their inbox.
+    if (data.deleted_by_buyer || data.deleted_by_seller) {
+      const isBuyer = data.buyer_id === req.user.id;
+      const { data: restored, error: restoreErr } = await supabaseAdmin
+        .from('chat_threads')
+        .update(isBuyer ? { deleted_by_buyer: false } : { deleted_by_seller: false })
+        .eq('id', data.id)
+        .select()
+        .single();
+      if (!restoreErr) return res.status(201).json({ thread: restored });
+    }
+
     res.status(201).json({ thread: data });
   } catch (err) {
     next(err);
@@ -141,37 +166,24 @@ chatRouter.post(
 
       const is_flagged = flagSuspiciousMessage(parsed.data.body);
 
-      // ─── TEMPORARY DEBUG LOGGING — remove once the RLS issue is diagnosed ───
-      console.log('[CHAT-DEBUG] Insert attempt:', {
-        thread_id: req.params.id,
-        sender_id: req.user?.id,
-        sender_id_type: typeof req.user?.id,
-        is_flagged,
-        keyPrefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 30),
-        keyLength: process.env.SUPABASE_SERVICE_ROLE_KEY?.length,
-      });
-      // ──────────────────────────────────────────────────────────────────────
-
       const { data, error } = await supabaseAdmin
         .from('chat_messages')
         .insert({ thread_id: req.params.id, sender_id: req.user.id, body: parsed.data.body, is_flagged })
         .select()
         .single();
 
-      if (error) {
-        // ─── TEMPORARY DEBUG LOGGING ───
-        console.error('[CHAT-DEBUG] Insert FAILED:', JSON.stringify(error, null, 2));
-        // ────────────────────────────────
-        throw error;
-      }
+      if (error) throw error;
 
-      // ─── TEMPORARY DEBUG LOGGING ───
-      console.log('[CHAT-DEBUG] Insert SUCCEEDED, id:', data.id);
-      // ────────────────────────────────
-
+      // Sending a new message un-hides the thread for BOTH sides — if either
+      // participant had deleted it, a fresh message means the conversation
+      // is active again and both should see it in their inbox.
       await supabaseAdmin
         .from('chat_threads')
-        .update({ last_message_at: new Date().toISOString() })
+        .update({
+          last_message_at: new Date().toISOString(),
+          deleted_by_buyer: false,
+          deleted_by_seller: false,
+        })
         .eq('id', req.params.id);
 
       // Realtime delivery happens automatically via Supabase Realtime's Postgres
@@ -182,3 +194,43 @@ chatRouter.post(
     }
   }
 );
+
+// DELETE /api/chat/threads/:id — remove this thread from MY inbox only.
+// The other participant still sees it and their messages are untouched.
+// This is a soft delete: it flips deleted_by_buyer or deleted_by_seller
+// depending on which side the current user is on.
+chatRouter.delete('/threads/:id', requireAuth, async (req, res, next) => {
+  try {
+    const { data: thread, error: threadErr } = await supabaseAdmin
+      .from('chat_threads')
+      .select('id, buyer_id, seller_id, deleted_by_buyer, deleted_by_seller')
+      .eq('id', req.params.id)
+      .single();
+
+    if (threadErr) return res.status(404).json({ error: 'Thread not found' });
+    if (![thread.buyer_id, thread.seller_id].includes(req.user.id)) {
+      return res.status(403).json({ error: 'Not a participant in this thread' });
+    }
+
+    const isBuyer = thread.buyer_id === req.user.id;
+    const update = isBuyer ? { deleted_by_buyer: true } : { deleted_by_seller: true };
+
+    const { error: updateErr } = await supabaseAdmin
+      .from('chat_threads')
+      .update(update)
+      .eq('id', req.params.id);
+
+    if (updateErr) throw updateErr;
+
+    // If BOTH sides have now deleted it, permanently remove the thread.
+    // chat_messages cascades automatically (ON DELETE CASCADE on thread_id).
+    const otherSideAlreadyDeleted = isBuyer ? thread.deleted_by_seller : thread.deleted_by_buyer;
+    if (otherSideAlreadyDeleted) {
+      await supabaseAdmin.from('chat_threads').delete().eq('id', req.params.id);
+    }
+
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});

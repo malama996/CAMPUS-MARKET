@@ -15,6 +15,7 @@ export default function ListingDetailPage({ params }) {
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -46,13 +47,32 @@ export default function ListingDetailPage({ params }) {
     }
   };
 
-  const handleDeleteListing = async () => {
-    const confirmed = window.confirm('Delete this listing? It will be removed from the market.');
+  // Soft delete — hides the listing from the market, but it can be restored.
+  const handleRemoveFromMarket = async () => {
+    setMenuOpen(false);
+    const confirmed = window.confirm('Remove this listing from the market? You can restore it later from support if needed.');
     if (!confirmed) return;
 
     try {
       setDeleting(true);
       await api.delete(`/listings/${listing.id}`);
+      router.push('/market');
+    } catch (err) {
+      alert('Failed to remove listing');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  // Hard delete — permanently removes the listing and cannot be undone.
+  const handleDeletePermanently = async () => {
+    setMenuOpen(false);
+    const confirmed = window.confirm('Permanently delete this listing? This cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await api.delete(`/listings/${listing.id}/permanent`);
       router.push('/market');
     } catch (err) {
       alert('Failed to delete listing');
@@ -89,14 +109,36 @@ export default function ListingDetailPage({ params }) {
                 />
                 {user && <SaveButton listingId={listing.id} initialSaved={listing.viewerHasSaved} />}
               </div>
+
               {isOwner && (
-                <button
-                  onClick={handleDeleteListing}
-                  disabled={deleting}
-                  className="inline-flex h-10 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 px-4 text-sm font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
-                >
-                  {deleting ? 'Deleting...' : 'Delete Listing'}
-                </button>
+                <div className="relative">
+                  <button
+                    onClick={() => setMenuOpen((v) => !v)}
+                    disabled={deleting}
+                    className="inline-flex h-10 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 px-4 text-sm font-medium text-destructive hover:bg-destructive/20 disabled:opacity-50"
+                  >
+                    {deleting ? 'Working...' : 'Delete'}
+                  </button>
+
+                  {menuOpen && !deleting && (
+                    <div className="absolute right-0 mt-2 w-56 rounded-md border border-border bg-card shadow-lg z-10 overflow-hidden">
+                      <button
+                        onClick={handleRemoveFromMarket}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted"
+                      >
+                        Remove from Market
+                        <span className="block text-xs text-muted-foreground">Hides it, can be restored</span>
+                      </button>
+                      <button
+                        onClick={handleDeletePermanently}
+                        className="w-full text-left px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 border-t border-border"
+                      >
+                        Delete Permanently
+                        <span className="block text-xs text-destructive/70">Cannot be undone</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           </div>
@@ -116,9 +158,9 @@ export default function ListingDetailPage({ params }) {
                 <p className="text-xs text-muted-foreground">@{listing.seller?.username}</p>
               </div>
             </div>
-            
+
             {user?.id !== listing.seller_id && (
-              <button 
+              <button
                 onClick={handleContact}
                 className="w-full sm:w-auto inline-flex h-11 items-center justify-center rounded-md bg-primary px-8 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
               >

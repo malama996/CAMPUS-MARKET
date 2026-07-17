@@ -343,7 +343,11 @@ listingsRouter.patch('/:id', requireAuth, async (req, res, next) => {
   }
 });
 
-// ─── DELETE LISTING ─────────────────────────────────────────────────────────
+// ─── REMOVE LISTING FROM MARKET (soft delete) ───────────────────────────────
+// Hides the listing from feed/search/detail immediately but keeps the row —
+// preserves history for disputes, fraud review (moderation_flags, reports),
+// and lets the seller be restored if this was a mistake. This is what fires
+// when a seller taps "Remove from Market".
 listingsRouter.delete('/:id', requireAuth, async (req, res, next) => {
   try {
     const { data, error } = await supabaseAdmin
@@ -360,7 +364,41 @@ listingsRouter.delete('/:id', requireAuth, async (req, res, next) => {
 
     // Await this — a delete must clear the cache before responding, otherwise
     // a fast client refetch can still hit the stale cached feed page and show
-    // the just-deleted listing.
+    // the just-removed listing.
+    await invalidateFeedCache();
+
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PERMANENTLY DELETE LISTING (hard delete) ───────────────────────────────
+// Actually removes the row from the database. This is what fires when a
+// seller taps "Delete Permanently" — separate action from the soft delete
+// above so it's never triggered by accident.
+//
+// Safe to hard-delete: FKs from likes, saved_listings, comments, reports,
+// and moderation_flags are ON DELETE CASCADE (those rows go with it), and
+// chat_threads.listing_id is ON DELETE SET NULL (existing chat threads are
+// preserved, just lose the listing reference).
+listingsRouter.delete('/:id/permanent', requireAuth, async (req, res, next) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('listings')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('seller_id', req.user.id)
+      .select('id')
+      .single();
+
+    if (error || !data) return res.status(403).json({ error: 'Not your listing, or listing not found' });
+
+    // Only decrement if the listing hadn't already been soft-deleted (and
+    // thus already decremented). If your free-tier counter should never go
+    // negative, guard decrementListingCount itself with a floor at 0.
+    await decrementListingCount(req.user.id);
+
     await invalidateFeedCache();
 
     res.status(204).send();

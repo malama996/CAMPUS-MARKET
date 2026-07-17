@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import api from '../../../lib/api';
 import ChatBubble from '../../../components/ChatBubble';
@@ -9,10 +9,12 @@ import { supabase } from '../../../lib/supabaseClient';
 
 export default function ChatThreadPage() {
   const params = useParams();
+  const router = useRouter();
   const [messages, setMessages] = useState([]);
   const [thread, setThread] = useState(null);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
   const messagesEndRef = useRef(null);
   const { user } = useAuth();
 
@@ -92,21 +94,46 @@ export default function ChatThreadPage() {
     }
   };
 
+  const handleDeleteThread = async () => {
+    const confirmed = window.confirm('Delete this conversation? It will be removed from your inbox.');
+    if (!confirmed) return;
+
+    try {
+      setDeleting(true);
+      await api.delete(`/chat/threads/${params.threadId}`);
+      router.push('/chat');
+    } catch (err) {
+      alert('Failed to delete conversation');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading) return <div className="animate-pulse bg-card rounded-xl h-[80vh]"></div>;
 
   return (
     <div className="max-w-3xl mx-auto h-[80vh] flex flex-col bg-card rounded-xl border border-border shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="p-4 border-b border-border bg-muted/30 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
-          {thread?.partner?.display_name?.charAt(0) || 'U'}
+      <div className="p-4 border-b border-border bg-muted/30 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold shrink-0">
+            {thread?.partner?.display_name?.charAt(0) || 'U'}
+          </div>
+          <div className="min-w-0">
+            <h2 className="font-semibold text-foreground truncate">{thread?.partner?.display_name}</h2>
+            {thread?.listing && (
+              <p className="text-xs text-muted-foreground truncate">Listing: {thread.listing.title}</p>
+            )}
+          </div>
         </div>
-        <div>
-          <h2 className="font-semibold text-foreground">{thread?.partner?.display_name}</h2>
-          {thread?.listing && (
-            <p className="text-xs text-muted-foreground">Listing: {thread.listing.title}</p>
-          )}
-        </div>
+
+        <button
+          onClick={handleDeleteThread}
+          disabled={deleting}
+          className="shrink-0 h-8 px-3 inline-flex items-center justify-center rounded-md text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+        >
+          {deleting ? 'Deleting...' : 'Delete conversation'}
+        </button>
       </div>
 
       {/* Messages */}
