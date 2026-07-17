@@ -30,6 +30,12 @@ export default function ChatThreadPage() {
           if (messageData?.messages) {
             setMessages(messageData.messages);
           }
+          // Mark the other participant's messages as read now that this
+          // thread is open. Fire-and-forget — no need to block rendering
+          // on this, and a failure here shouldn't break the page.
+          api.patch(`/chat/threads/${params.threadId}/messages/read`).catch((err) => {
+            console.error('Failed to mark messages as read', err);
+          });
         }
       } catch (err) {
         console.error(err);
@@ -65,13 +71,35 @@ export default function ChatThreadPage() {
           if (prev.find((m) => m.id === payload.new.id)) return prev;
           return [...prev, payload.new];
         });
+
+        // If the incoming message is from the other participant and this
+        // thread is currently open, mark it read immediately rather than
+        // waiting for the next page load.
+        if (payload.new.sender_id !== user?.id) {
+          api.patch(`/chat/threads/${params.threadId}/messages/read`).catch((err) => {
+            console.error('Failed to mark messages as read', err);
+          });
+        }
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'chat_messages',
+        filter: `thread_id=eq.${params.threadId}`,
+      }, (payload) => {
+        // Picks up is_read flipping to true on messages I sent, once the
+        // other participant opens the thread — this is what turns the
+        // double check blue without a page refresh.
+        setMessages((prev) =>
+          prev.map((m) => (m.id === payload.new.id ? { ...m, is_read: payload.new.is_read } : m))
+        );
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [params.threadId]);
+  }, [params.threadId, user?.id]);
 
   const handleSend = async (e) => {
     e.preventDefault();

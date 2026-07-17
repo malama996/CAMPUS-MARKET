@@ -129,7 +129,7 @@ chatRouter.get('/threads/:id/messages', requireAuth, async (req, res, next) => {
 
     const { data, error } = await supabaseAdmin
       .from('chat_messages')
-      .select('id, body, sender_id, is_flagged, created_at')
+      .select('id, body, sender_id, is_flagged, is_read, created_at')
       .eq('thread_id', req.params.id)
       .order('created_at', { ascending: true })
       .limit(500);
@@ -194,6 +194,41 @@ chatRouter.post(
     }
   }
 );
+
+// PATCH /api/chat/threads/:id/messages/read — mark all of the OTHER
+// participant's messages in this thread as read by the current user.
+// Called when a participant opens/views the thread. The sender's client
+// picks up the resulting is_read change via the Realtime UPDATE subscription
+// on chat_messages, which is what flips their tick from delivered to read.
+chatRouter.patch('/threads/:id/messages/read', requireAuth, async (req, res, next) => {
+  try {
+    const { data: thread, error: threadErr } = await supabaseAdmin
+      .from('chat_threads')
+      .select('id, buyer_id, seller_id')
+      .eq('id', req.params.id)
+      .single();
+
+    if (threadErr) return res.status(404).json({ error: 'Thread not found' });
+    if (![thread.buyer_id, thread.seller_id].includes(req.user.id)) {
+      return res.status(403).json({ error: 'Not a participant in this thread' });
+    }
+
+    // Only mark messages sent by the OTHER participant as read — a user
+    // reading their own sent messages is meaningless.
+    const { error } = await supabaseAdmin
+      .from('chat_messages')
+      .update({ is_read: true })
+      .eq('thread_id', req.params.id)
+      .neq('sender_id', req.user.id)
+      .eq('is_read', false);
+
+    if (error) throw error;
+
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
 
 // DELETE /api/chat/threads/:id — remove this thread from MY inbox only.
 // The other participant still sees it and their messages are untouched.

@@ -32,6 +32,14 @@ const completeProfileSchema = z.object({
 // Helper: robustly detect "email already exists" across Supabase's various error shapes.
 // Supabase has changed this wording between versions, so we check multiple signals
 // instead of relying on one exact substring.
+//
+// NOTE: we deliberately do NOT treat a bare `authError.status === 422` as
+// "email already exists". Supabase returns 422 for several unrelated
+// validation failures too (e.g. a rejected weak password), and matching on
+// status alone was misreporting those as "an account with this email
+// already exists" — which is both wrong and sends the user to try logging
+// in with an account that was never created. Only match on the specific
+// error codes/messages Supabase actually uses for a duplicate email.
 function isEmailAlreadyExistsError(authError) {
   if (!authError) return false;
   const msg = (authError.message || '').toLowerCase();
@@ -40,7 +48,6 @@ function isEmailAlreadyExistsError(authError) {
   return (
     code === 'user_already_exists' ||
     code === 'email_exists' ||
-    authError.status === 422 ||
     (msg.includes('already') && (msg.includes('registered') || msg.includes('exists')))
   );
 }
@@ -207,9 +214,35 @@ authRouter.post('/logout', requireAuth, async (req, res, next) => {
 // ─── DELETE ACCOUNT ───────────────────────────────────────────────────────
 authRouter.delete('/me', requireAuth, async (req, res, next) => {
   try {
-    await supabaseAdmin.from('profiles').delete().eq('id', req.user.id).catch(() => {});
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(req.user.id);
-    if (error) throw error;
+    // Deleting the profile cascades to the user's listings, chat threads,
+    // chat messages, likes, saved_listings, comments, follows, and reports
+    // (all FKs to profiles.id are ON DELETE CASCADE). Note this means a
+    // shared chat_thread is removed entirely — for BOTH participants — the
+    // moment either one deletes their account, since buyer_id/seller_id
+    // both cascade. If that's not the desired behavior long-term, revisit
+    // those FK rules (e.g. SET NULL + a "Deleted User" placeholder in the
+    // UI) rather than patching around it here.
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .delete()
+      .eq('id', req.user.id);
+
+    if (profileError) {
+      // Do NOT proceed to delete the auth user if this failed — that would
+      // leave an orphaned profile with no way to log back in and finish
+      // deleting it. Surface the error instead of silently continuing.
+      console.error('Account deletion — profile delete failed:', profileError);
+      throw profileError;
+    }
+
+    const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(req.user.id);
+    if (authError) {
+      // Profile is already gone at this point but the auth user survived.
+      // Log loudly — this needs manual cleanup (an orphaned auth.users row
+      // with no matching profile) rather than silently succeeding.
+      console.error('Account deletion — auth user delete failed after profile was removed:', authError);
+      throw authError;
+    }
 
     res.status(204).send();
   } catch (err) {
