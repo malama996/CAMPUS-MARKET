@@ -4,14 +4,16 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../../../lib/auth';
 import api from '../../../lib/api';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
 export default function ProfilePage({ params }) {
   const { user, profile: currentUserProfile, logout, deleteAccount } = useAuth();
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const router = useRouter();
-  
+
   const isOwner = user?.id === params.id;
 
   useEffect(() => {
@@ -29,16 +31,14 @@ export default function ProfilePage({ params }) {
     load();
   }, [params.id, isOwner, currentUserProfile]);
 
-  const handleDeleteAccount = async () => {
-    const confirmed = window.confirm('Delete your account permanently? This cannot be undone.');
-    if (!confirmed) return;
-
+  const confirmDeleteAccount = async () => {
     try {
       setDeleting(true);
       await deleteAccount();
       router.replace('/');
     } finally {
       setDeleting(false);
+      setConfirmOpen(false);
     }
   };
 
@@ -66,14 +66,14 @@ export default function ProfilePage({ params }) {
         {isOwner && (
           <div className="mt-10 pt-6 border-t border-border flex flex-col gap-4">
             <h3 className="font-semibold text-lg">Account Actions</h3>
-            <button 
+            <button
               onClick={logout}
               className="w-full sm:w-auto px-6 py-2 bg-destructive/10 text-destructive border border-destructive/20 rounded-md hover:bg-destructive/20 transition-colors self-start font-medium"
             >
               Log Out
             </button>
             <button
-              onClick={handleDeleteAccount}
+              onClick={() => setConfirmOpen(true)}
               disabled={deleting}
               className="w-full sm:w-auto px-6 py-2 bg-background text-destructive border border-destructive/20 rounded-md hover:bg-destructive/10 transition-colors self-start font-medium disabled:opacity-50"
             >
@@ -82,6 +82,15 @@ export default function ProfilePage({ params }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete your account permanently?"
+        description="This cannot be undone. Your profile, listings, and messages will be permanently removed."
+        confirmLabel="Delete account"
+        onConfirm={confirmDeleteAccount}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
