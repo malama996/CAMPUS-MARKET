@@ -4,11 +4,14 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useAuth } from '../../lib/auth';
 import api from '../../lib/api';
+import ConfirmDialog from '../../components/ConfirmDialog';
 
 export default function ChatListPage() {
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  // The thread currently pending delete confirmation, or null
+  const [pendingDeleteId, setPendingDeleteId] = useState(null);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -25,13 +28,16 @@ export default function ChatListPage() {
     if (user) load();
   }, [user]);
 
-  const handleDeleteThread = async (e, threadId) => {
+  const handleRequestDelete = (e, threadId) => {
     // Prevent the click from also triggering the <Link> navigation
     e.preventDefault();
     e.stopPropagation();
+    setPendingDeleteId(threadId);
+  };
 
-    const confirmed = window.confirm('Delete this conversation? It will be removed from your inbox.');
-    if (!confirmed) return;
+  const confirmDeleteThread = async () => {
+    const threadId = pendingDeleteId;
+    if (!threadId) return;
 
     try {
       setDeletingId(threadId);
@@ -41,6 +47,7 @@ export default function ChatListPage() {
       alert('Failed to delete conversation');
     } finally {
       setDeletingId(null);
+      setPendingDeleteId(null);
     }
   };
 
@@ -82,7 +89,7 @@ export default function ChatListPage() {
                 </div>
 
                 <button
-                  onClick={(e) => handleDeleteThread(e, thread.id)}
+                  onClick={(e) => handleRequestDelete(e, thread.id)}
                   disabled={isDeleting}
                   aria-label="Delete conversation"
                   title="Delete conversation"
@@ -101,6 +108,15 @@ export default function ChatListPage() {
           })}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        title="Delete this conversation?"
+        description="It will be removed from your inbox. The other person will still see their side unless they delete it too."
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteThread}
+        onCancel={() => setPendingDeleteId(null)}
+      />
     </div>
   );
 }

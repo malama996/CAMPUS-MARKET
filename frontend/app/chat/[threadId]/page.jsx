@@ -6,6 +6,7 @@ import { useAuth } from '../../../lib/auth';
 import api from '../../../lib/api';
 import ChatBubble from '../../../components/ChatBubble';
 import { supabase } from '../../../lib/supabaseClient';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
 export default function ChatThreadPage() {
   const params = useParams();
@@ -15,6 +16,7 @@ export default function ChatThreadPage() {
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const { user } = useAuth();
 
@@ -94,10 +96,7 @@ export default function ChatThreadPage() {
     }
   };
 
-  const handleDeleteThread = async () => {
-    const confirmed = window.confirm('Delete this conversation? It will be removed from your inbox.');
-    if (!confirmed) return;
-
+  const confirmDeleteThread = async () => {
     try {
       setDeleting(true);
       await api.delete(`/chat/threads/${params.threadId}`);
@@ -106,6 +105,7 @@ export default function ChatThreadPage() {
       alert('Failed to delete conversation');
     } finally {
       setDeleting(false);
+      setConfirmOpen(false);
     }
   };
 
@@ -128,7 +128,7 @@ export default function ChatThreadPage() {
         </div>
 
         <button
-          onClick={handleDeleteThread}
+          onClick={() => setConfirmOpen(true)}
           disabled={deleting}
           className="shrink-0 h-8 px-3 inline-flex items-center justify-center rounded-md text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
         >
@@ -163,6 +163,15 @@ export default function ChatThreadPage() {
           </button>
         </form>
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete this conversation?"
+        description="It will be removed from your inbox. The other person will still see their side unless they delete it too."
+        confirmLabel="Delete"
+        onConfirm={confirmDeleteThread}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

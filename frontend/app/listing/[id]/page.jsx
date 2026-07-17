@@ -10,12 +10,15 @@ import LikeButton from '../../../components/LikeButton';
 import CommentSection from '../../../components/CommentSection';
 import SimilarListings from '../../../components/SimilarListings';
 import ImageGallery from '../../../components/ImageGallery';
+import ConfirmDialog from '../../../components/ConfirmDialog';
 
 export default function ListingDetailPage({ params }) {
   const [listing, setListing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Tracks which confirmation dialog is open: null | 'remove' | 'permanent'
+  const [confirmAction, setConfirmAction] = useState(null);
   const { user } = useAuth();
   const router = useRouter();
 
@@ -48,11 +51,7 @@ export default function ListingDetailPage({ params }) {
   };
 
   // Soft delete — hides the listing from the market, but it can be restored.
-  const handleRemoveFromMarket = async () => {
-    setMenuOpen(false);
-    const confirmed = window.confirm('Remove this listing from the market? You can restore it later from support if needed.');
-    if (!confirmed) return;
-
+  const confirmRemoveFromMarket = async () => {
     try {
       setDeleting(true);
       await api.delete(`/listings/${listing.id}`);
@@ -61,15 +60,12 @@ export default function ListingDetailPage({ params }) {
       alert('Failed to remove listing');
     } finally {
       setDeleting(false);
+      setConfirmAction(null);
     }
   };
 
   // Hard delete — permanently removes the listing and cannot be undone.
-  const handleDeletePermanently = async () => {
-    setMenuOpen(false);
-    const confirmed = window.confirm('Permanently delete this listing? This cannot be undone.');
-    if (!confirmed) return;
-
+  const confirmDeletePermanently = async () => {
     try {
       setDeleting(true);
       await api.delete(`/listings/${listing.id}/permanent`);
@@ -78,6 +74,7 @@ export default function ListingDetailPage({ params }) {
       alert('Failed to delete listing');
     } finally {
       setDeleting(false);
+      setConfirmAction(null);
     }
   };
 
@@ -123,14 +120,14 @@ export default function ListingDetailPage({ params }) {
                   {menuOpen && !deleting && (
                     <div className="absolute right-0 mt-2 w-56 rounded-md border border-border bg-card shadow-lg z-10 overflow-hidden">
                       <button
-                        onClick={handleRemoveFromMarket}
+                        onClick={() => { setMenuOpen(false); setConfirmAction('remove'); }}
                         className="w-full text-left px-4 py-2.5 text-sm hover:bg-muted"
                       >
                         Remove from Market
                         <span className="block text-xs text-muted-foreground">Hides it, can be restored</span>
                       </button>
                       <button
-                        onClick={handleDeletePermanently}
+                        onClick={() => { setMenuOpen(false); setConfirmAction('permanent'); }}
                         className="w-full text-left px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 border-t border-border"
                       >
                         Delete Permanently
@@ -174,6 +171,24 @@ export default function ListingDetailPage({ params }) {
       </div>
 
       <SimilarListings listingId={listing.id} />
+
+      <ConfirmDialog
+        open={confirmAction === 'remove'}
+        title="Remove this listing from the market?"
+        description="Buyers will no longer see it. You can restore it later if needed."
+        confirmLabel="Remove"
+        onConfirm={confirmRemoveFromMarket}
+        onCancel={() => setConfirmAction(null)}
+      />
+
+      <ConfirmDialog
+        open={confirmAction === 'permanent'}
+        title="Permanently delete this listing?"
+        description="This cannot be undone. The listing and all related likes, saves, and comments will be gone for good."
+        confirmLabel="Delete permanently"
+        onConfirm={confirmDeletePermanently}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }
